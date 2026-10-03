@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Brain demo: talk to the pet and watch it react. No speech output yet.
+"""Brain + voice demo: talk to the pet; it reacts and answers out loud.
 
     python3 demo_brain.py              # Enter to start/stop talking
     python3 demo_brain.py --text       # type messages instead (no mic)
@@ -25,6 +25,7 @@ from font import Font                          # noqa: E402
 from gfx import Canvas                         # noqa: E402
 from memory import Memory                      # noqa: E402
 from mistral import Mistral, MistralError      # noqa: E402
+from speech import Player, decode              # noqa: E402
 
 INSTRUCTION = "The audio is the user speaking to you. Reply as specified."
 
@@ -33,16 +34,44 @@ class FaceLoop(threading.Thread):
     """Renders the face at ~20 FPS on its own thread; the main thread
     talks to it through set_* calls (simple attribute writes)."""
 
-    def __init__(self, face):
+    def __init__(self, face, player):
         super().__init__(daemon=True)
-        self.face = face
+        self.face, self.player = face, player
         self.subtitles = []
         self.sub_until = 0.0
+        self.timed = None           # [(start_s, chunk)] while speech plays
         self.running = True
 
-    def say(self, chunks):
-        self.subtitles = list(chunks)
-        self.sub_until = 0.0
+    def say(self, chunks, duration=None):
+        """Show chunks one after another: timed across the speech when its
+        duration is known (longer chunks stay up longer), else ~1-2 s each."""
+        if duration:
+            total = sum(len(c) + 3 for c in chunks) or 1
+            t, self.timed = 0.0, []
+            for c in chunks:
+                self.timed.append((t, c))
+                t += duration * (len(c) + 3) / total
+            self.subtitles, self.sub_until = [], 0.0
+        else:
+            self.timed = None
+            self.subtitles = list(chunks)
+            self.sub_until = 0.0
+
+    def _subtitle_tick(self, now):
+        if self.timed is not None:
+            el = self.player.elapsed()
+            if self.player.playing():
+                current = [c for t, c in self.timed if t <= el]
+                self.face.subtitle = current[-1] if current else self.timed[0][1]
+            elif el > self.player.duration + 1.5:
+                self.face.subtitle, self.timed = "", None
+            return
+        if self.subtitles and now >= self.sub_until:
+            chunk = self.subtitles.pop(0)
+            self.face.subtitle = chunk
+            self.sub_until = now + max(1.2, 0.09 * len(chunk))
+        elif not self.subtitles and self.sub_until and now >= self.sub_until + 2:
+            self.face.subtitle, self.sub_until = "", 0.0
 
     def run(self):
         from fb import Framebuffer
@@ -51,12 +80,8 @@ class FaceLoop(threading.Thread):
         try:
             while self.running:
                 now = time.monotonic()
-                if self.subtitles and now >= self.sub_until:
-                    chunk = self.subtitles.pop(0)
-                    self.face.subtitle = chunk
-                    self.sub_until = now + max(1.2, 0.09 * len(chunk))
-                elif not self.subtitles and self.sub_until and now >= self.sub_until + 2:
-                    self.face.subtitle, self.sub_until = "", 0.0
+                self._subtitle_tick(now)
+                self.face.set_talk(self.player.level())
                 self.face.update(now - last)
                 last = now
                 self.face.render(canvas)
@@ -80,9 +105,14 @@ def main():
     client = Mistral(cfg["MISTRAL_API_KEY"], cfg["MISTRAL_MODEL"])
     rec = Recorder(cfg["AUDIO_DEVICE"], int(cfg["SAMPLE_RATE"]), int(cfg["MAX_SECONDS"]))
 
+    player = Player(cfg["SPEAKER"] or None)
+    tts = cfg["TTS"] != "0"
+    print(f"Speaker: {player.device or 'none found (subtitles only)'}; "
+          f"voice: {cfg['VOICE'] if tts else 'off'}")
+
     face = Face(Font())
     face.set_emotion("happy", 0.6)
-    loop = FaceLoop(face)
+    loop = FaceLoop(face, player)
     loop.start()
     loop.say([f"Hi! I'm {mem.name}"])
 
@@ -124,7 +154,20 @@ def main():
             face.set_emotion(r.emotion, r.intensity)
             face.do(r.action)
             face.look(r.look)
-            loop.say(r.screen)
+            spoken = False
+            if tts and r.say:
+                try:
+                    audio, tts_s = client.speech(r.say, cfg["VOICE"], cfg["TTS_MODEL"])
+                    x, rate = decode(audio)
+                    print(f"     voice: {tts_s:.1f} s for {len(x) / rate:.1f} s of audio "
+                          f"({rate} Hz, field '{client.tts_voice_key}')")
+                    player.play(x, rate)
+                    loop.say(r.screen, duration=len(x) / rate)
+                    spoken = True
+                except (MistralError, ValueError) as e:
+                    print("     voice failed:", e)
+            if not spoken:
+                loop.say(r.screen)
             if r.remember and mem.remember(r.remember):
                 print(f"     remembered: {r.remember}")
     except (KeyboardInterrupt, EOFError):

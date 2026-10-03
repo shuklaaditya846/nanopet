@@ -91,6 +91,42 @@ class Mistral:
             content = "".join(c.get("text", "") for c in content if isinstance(c, dict))
         return content, time.monotonic() - t0
 
+    # --- text to speech ------------------------------------------------------
+    # POST /v1/audio/speech {model, input, voice|voice_id, response_format}.
+    # Sources disagree on the voice field name and on whether audio comes
+    # back raw or base64 in JSON ("audio_data"), so both are handled and the
+    # working voice field is remembered.
+    tts_voice_key = None
+
+    def speech(self, text, voice, model="voxtral-mini-tts-2603", fmt="wav"):
+        """Returns (audio bytes in format fmt, seconds)."""
+        t0 = time.monotonic()
+        keys = [self.tts_voice_key] if self.tts_voice_key else ["voice", "voice_id"]
+        last = None
+        for key in keys:
+            payload = {"model": model, "input": text, "response_format": fmt}
+            if voice:
+                payload[key] = voice
+            r = self.session.post(API_BASE + "/audio/speech", json=payload,
+                                  timeout=self.timeout)
+            if r.status_code == 401:
+                raise MistralError("API key rejected (401)")
+            if r.status_code >= 400:
+                last = MistralError(f"TTS HTTP {r.status_code}: {r.text[:300]}")
+                if "voice" in r.text.lower() and key != keys[-1]:
+                    continue            # wrong field name: try the other one
+                raise last
+            self.tts_voice_key = key
+            ctype = r.headers.get("Content-Type", "")
+            if "json" in ctype:
+                data = r.json()
+                b64 = data.get("audio_data") or data.get("audio") or data.get("data")
+                if not b64:
+                    raise MistralError(f"TTS: no audio in JSON reply: {str(data)[:200]}")
+                return base64.b64decode(b64), time.monotonic() - t0
+            return r.content, time.monotonic() - t0
+        raise last or MistralError("TTS failed")
+
     def chat_audio(self, system_prompt, wav_bytes, instruction, **kw):
         b64 = base64.b64encode(wav_bytes).decode("ascii")
         return self.chat(system_prompt, [{"type": "input_audio", "input_audio": b64},

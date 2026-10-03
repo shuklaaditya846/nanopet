@@ -3,8 +3,9 @@
 A desk pet for the NanoPi NEO Air: an animated face on the ST7789 that will
 listen, think and talk. See [PLAN.md](PLAN.md) for the design and milestones.
 
-**Status: milestone 3, the brain.** Talk to it and it reacts with emotions,
-actions and subtitles. It doesn't speak yet: that's milestone 4.
+**Status: milestone 4, the voice.** Talk to it: it reacts with emotions and
+actions and answers out loud through the USB sound card, with lip-sync and
+timed subtitles.
 
 It runs on the stock `nanopi-system` image, so no re-flash is needed:
 numpy for drawing, plus a font atlas built on the laptop.
@@ -26,7 +27,18 @@ ssh -t root@192.168.29.120 python3 /opt/nanopet/demo_face.py
 
 `demo_face.py --bench` times the rendering alone, with no LCD needed.
 
-### Brain demo (needs your Mistral key)
+### Voice check
+
+```sh
+ssh root@192.168.29.120 python3 /opt/nanopet/say.py "Hi, I'm Pip!"
+ssh root@192.168.29.120 python3 /opt/nanopet/say.py --voice gb_jane_neutral "Another voice"
+ssh root@192.168.29.120 python3 /opt/nanopet/say.py --voices    # try to list the voices
+```
+
+Set `VOICE=...` in `/etc/nanopet.conf` to change the default, and `TTS=0`
+for subtitles only.
+
+### Brain + voice demo (needs your Mistral key)
 
 ```sh
 ssh -t root@192.168.29.120 python3 /opt/nanopet/demo_brain.py          # Enter = talk / send
@@ -61,6 +73,8 @@ JSON-mode fallback.
 | `mistral.py` | chat with audio or text, JSON mode with automatic fallback, model fallback |
 | `memory.py` | remembered facts, the pet's name and mood (JSON file) |
 | `common.py` | config, clock bootstrap, microphone recorder |
-| `demo_brain.py` | talk → reaction demo (face thread + subtitle cycling) |
+| `demo_brain.py` | talk → reaction + spoken answer, with lip-sync and timed subtitles |
+| `speech.py` | decodes TTS audio (WAV / float PCM), loudness envelope, USB playback |
+| `say.py` | speak one sentence; voice check and voice list |
 | `tools/make_font.py` | laptop: TrueType → `assets/font.npz` (Noto Sans Bold 22/36 px) |
 | `tools/preview.py` | laptop: all emotions in one PNG contact sheet |

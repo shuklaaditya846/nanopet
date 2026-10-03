@@ -26,6 +26,10 @@ DEFAULTS = {
     "ENCODER_REVERSE": "0",
     "ENCODER_STEPS": "4",
     "MEMORY": "/var/lib/nanopet/memory.json",
+    "TTS": "1",                     # 0 = subtitles only
+    "TTS_MODEL": "voxtral-mini-tts-2603",
+    "VOICE": "en_paul_neutral",     # a Voxtral preset voice id
+    "SPEAKER": "",                  # ALSA device; empty = first USB sound card
 }
 
 

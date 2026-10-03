@@ -44,7 +44,11 @@ class FaceLoop(threading.Thread):
 
     def say(self, chunks, duration=None):
         """Show chunks one after another: timed across the speech when its
-        duration is known (longer chunks stay up longer), else ~1-2 s each."""
+        duration is known (longer chunks stay up longer), else ~1-2 s each.
+        Chunks the font can't draw (non-Latin scripts) are left out."""
+        font = self.face.font
+        if font is not None:
+            chunks = [c for c in chunks if font.supports(c)]
         if duration:
             total = sum(len(c) + 3 for c in chunks) or 1
             t, self.timed = 0.0, []
@@ -161,7 +165,7 @@ def main():
                 print(f"  raw: {' '.join(raw.split())[:400]}")
             for line in info["log"]:
                 print(f"  memory: {line}")
-            print(f"  heard: {info['heard']}")
+            print(f"  heard ({r.lang}): {info['heard']}")
             print(f"  -> {r.emotion} ({r.intensity:.1f}), action {r.action}, look {r.look}")
             print(f"     say: {r.say}")
             print(f"     screen: {r.screen}")
@@ -171,7 +175,8 @@ def main():
             spoken = False
             if tts and r.say:
                 try:
-                    audio, tts_s = client.speech(r.say, cfg["VOICE"], cfg["TTS_MODEL"])
+                    voice = cfg.get(f"VOICE_{r.lang.upper()}") or cfg["VOICE"]
+                    audio, tts_s = client.speech(r.say, voice, cfg["TTS_MODEL"])
                     x, rate = decode(audio)
                     t_fx = time.monotonic()
                     x = voicefx.apply(x, rate, cfg["VOICE_FX"], cfg["VOICE_PITCH"] or None)

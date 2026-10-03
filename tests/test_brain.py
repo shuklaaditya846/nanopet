@@ -64,6 +64,19 @@ check("empty reply", not r.ok and r.screen == ["..."])
 r = parse_reply('{"broken": } {"emotion": "sad", "say": "second object"}')
 check("skips a broken object, takes the next", r.ok and r.emotion == "sad")
 
+r = parse_reply(json.dumps({"lang": "hi", "say": "नमस्ते! मैं पिप हूँ।",
+                            "screen": ["Namaste!", "Main Pip hoon."]}))
+check("Hindi: native script spoken, romanised subtitles",
+      r.lang == "hi" and r.say.startswith("नमस्ते") and r.screen == ["Namaste!", "Main Pip hoon."])
+check("lang normalised (fr-FR -> fr, missing -> en)",
+      parse_reply('{"lang": "fr-FR"}').lang == "fr" and parse_reply('{"say": "x"}').lang == "en")
+from font import Font                                      # noqa: E402
+f = Font()
+check("font covers accents, refuses Devanagari",
+      f.supports("Ça va très bien… ¿Qué? Grüß") and not f.supports("नमस्ते"))
+p = system_prompt("Pip", {})
+check("prompt has the language rules", "Always answer in the language" in p and '"lang"' in p)
+
 print("chunk_text")
 check("basic", chunk_text("one two three four", 9) == ["one two", "three", "four"])
 check("hard split", chunk_text("supercalifragilistic", 8) == ["supercal", "ifragili", "stic"])

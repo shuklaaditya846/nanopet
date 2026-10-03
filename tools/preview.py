@@ -42,6 +42,8 @@ def main():
     font = Font()
     shots = [(e, frame(font, e, subtitle=e)) for e in EMOTIONS]
     shots.append(("talking", frame(font, "happy", talk=0.7, subtitle="Hi! I'm Pip")))
+    shots.append(("french", frame(font, "love", subtitle="Ça va très bien…")))
+    shots.append(("hindi (romanised)", frame(font, "happy", subtitle="Main Pip hoon!")))
     shots.append(("bounce", frame(font, "excited", action="bounce", after=0.15)))
     cols = 4
     rows = (len(shots) + cols - 1) // cols

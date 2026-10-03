@@ -29,17 +29,25 @@ SYNONYMS = {
 CONTRACT = """\
 Always reply with ONE JSON object and nothing else:
 {
-  "heard": a short transcript of what the user just said,
+  "heard": a short transcript of what the user just said, in their language,
+  "lang": the ISO 639-1 code of the language the user spoke (en, hi, fr, ...),
   "emotion": one of %(emotions)s,
   "intensity": number 0.0-1.0,
-  "say": what you say out loud: short, warm, spoken style, at most %(words)d words,
-  "screen": the same message as 1-%(chunks)d short subtitle chunks, each at most %(chars)d characters,
+  "say": what you say out loud, in the user's language and its normal script: short, warm, spoken style, at most %(words)d words,
+  "screen": the same message as 1-%(chunks)d short subtitle chunks, each at most %(chars)d characters, ALWAYS in Latin letters,
   "action": one of %(actions)s,
   "look": one of %(looks)s,
   "memory_write": [{"topic": "...", "note": "..."}] lasting facts to save, or [],
   "memory_read": ["topic", ...] memory topics you need to read before answering, or []
 }
 Pick the emotion that fits how YOU feel about what the user said. No emojis.
+
+LANGUAGE. Always answer in the language the user spoke, even if earlier
+messages were in another language. Your screen can only show Latin letters
+(accents like é ü ñ ç are fine), so "screen" must use Latin script: for
+languages written in other scripts, romanise it (Hindi as Hinglish-style
+romanisation, e.g. "Namaste! Main Pip hoon"). "say" stays in the real script
+(e.g. Devanagari for Hindi) because it is spoken aloud.
 
 MEMORY. You have a long-term memory of notes, grouped by topic (for example
 user, preferences, people, events). Save short lasting facts with
@@ -76,6 +84,7 @@ class Reply:
     action: str = "none"
     look: str = "center"
     heard: str = ""
+    lang: str = "en"
     memory_read: list = field(default_factory=list)
     memory_write: list = field(default_factory=list)   # [(topic, note)]
     raw: str = ""
@@ -199,6 +208,8 @@ def parse_reply(text, max_chars=18, max_say=400):
         r.say = " ".join(chunks)
 
     r.heard = " ".join(str(obj.get("heard") or "").split())[:300]
+    lang = str(obj.get("lang") or "en").strip().lower()
+    r.lang = lang[:2] if lang[:2].isalpha() else "en"
 
     reads = obj.get("memory_read") or []
     if isinstance(reads, str):

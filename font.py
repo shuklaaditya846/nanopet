@@ -12,7 +12,12 @@ ATLAS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "font
 class Font:
     def __init__(self, path=ATLAS):
         d = np.load(path)
-        self.chars = {c: i for i, c in enumerate(bytes(d["chars"]).decode())}
+        chars = d["chars"]
+        if chars.dtype == np.uint8:                  # older atlas: ASCII bytes
+            text = bytes(chars).decode()
+        else:
+            text = "".join(chr(int(c)) for c in chars)
+        self.chars = {c: i for i, c in enumerate(text)}
         self.sizes = {}
         for s in d["sizes"]:
             s = int(s)
@@ -25,6 +30,9 @@ class Font:
 
     def nearest(self, size):
         return min(self.sizes, key=lambda s: abs(s - size))
+
+    def supports(self, text):
+        return all(c in self.chars or c.isspace() for c in text)
 
     def _index(self, ch):
         return self.chars.get(ch, self.chars["?"])

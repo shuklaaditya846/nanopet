@@ -58,6 +58,16 @@ The key comes from `/etc/nanopet.conf`, falling back to ptt-assistant's
 `/etc/assistant.conf`. Every turn prints the raw model output, whether JSON
 mode was accepted, what Pip heard, any memory activity, and the latency.
 
+### Languages
+
+Pip answers in whatever language you speak. The reply carries `lang` (an ISO
+code). `say` is in that language's real script, because it's spoken, while
+`screen` is always Latin script, because that's all the LCD font can draw:
+accented European languages show as-is, and Hindi or other non-Latin scripts
+show romanised ("Namaste! Main Pip hoon"). Subtitle chunks the font can't draw
+are skipped. A per-language voice can be set with `VOICE_<LANG>=...`, e.g.
+`VOICE_FR=fr_marie_neutral`; otherwise the default voice speaks every language.
+
 ### Memory
 
 - **Long-term:** notes files, one per topic, in `/var/lib/nanopet/notes/`

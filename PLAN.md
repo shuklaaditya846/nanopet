@@ -13,6 +13,7 @@ reacts with emotions driven by the AI's structured replies.
 | Subtitles | always shown: short chunks (≤ ~14 characters) timed to the speech |
 | Speaker | USB sound card (works today); an I2S amp (MAX98357A) is a later option |
 | Code | new repo `nanopet`; reuses the GPIO, recorder and Mistral client code from `ptt-assistant` |
+| Install | **an app only: no image rebuild, no re-flash.** It's deployed over SSH like ptt-assistant |
 
 ## Turn pipeline
 
@@ -65,9 +66,13 @@ Drawn procedurally with Pillow, at 320×240.
 - **Idle:** random blinks, glances and slow breathing. After N minutes without
   interaction it gets sleepy (closed eyes, "z"); a knob turn wakes it up.
 - **Talking:** mouth openness follows the RMS loudness of the audio being played.
-- **Rendering:** stop the text console drawing over the face (`KDSETMODE
-  KD_GRAPHICS` on tty1) and convert to RGB565 with numpy. Write only the rows
-  that changed: fbtft sends just the dirty region over SPI.
+- **Rendering with numpy only**, which is already in the image. Ellipses, arcs
+  and fills are vectorised masks over a 320×240 RGB565 array. Stop the text
+  console drawing over the face (`KDSETMODE KD_GRAPHICS` on tty1). Write only
+  the rows that changed: fbtft sends just the dirty region over SPI.
+- **Text without a font library.** `tools/make_font.py` runs on the laptop with
+  Pillow and renders a TrueType font (Noto Sans Bold, two sizes) into a glyph
+  atlas (`.npz`, alpha masks plus advance widths). The board only blits glyphs.
 
 ## Controls (rotary encoder)
 
@@ -86,9 +91,12 @@ of replies.
 
 ## Milestones
 
-1. **Image (`system` repo).** Add python-pillow + freetype, a TrueType font
-   (DejaVu), espeak-ng and NTP; raise the ST7789 SPI clock to 62.5 MHz (try 80).
-   One rebuild and re-flash.
+1. ~~Image changes~~ **Not needed: it's an app.** The substitutes:
+   - numpy rendering and a pre-built glyph atlas instead of Pillow and freetype
+   - the HTTP `Date` clock bootstrap instead of NTP (the image has no `ntpd`)
+   - the espeak-ng fallback built by Buildroot on the laptop and shipped
+     inside the app folder (same toolchain and libc)
+   - optionally a faster SPI clock: a DTB-only update over SSH
 2. **Face demo, no AI.** `face.py` plus a keyboard demo that cycles emotions,
    actions and blinking. Measure the frame rate on the board (target ≥ 15 FPS).
 3. **Brain.** The JSON contract, prompt and tolerant parser, with tests on fake
@@ -105,4 +113,4 @@ of replies.
 - Whether Voxtral accepts `response_format` together with audio input
   (milestone 3).
 - The SPI clock this panel and its wiring can hold before artefacts appear
-  (milestone 1).
+  (optional DTB tweak).

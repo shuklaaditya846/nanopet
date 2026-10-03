@@ -35,8 +35,17 @@ ssh root@192.168.29.120 python3 /opt/nanopet/say.py --voice gb_jane_neutral "Ano
 ssh root@192.168.29.120 python3 /opt/nanopet/say.py --voices    # try to list the voices
 ```
 
-Set `VOICE=...` in `/etc/nanopet.conf` to change the default, and `TTS=0`
-for subtitles only.
+Pip's voice is a Mistral preset voice (`VOICE`, default `gb_jane_neutral`)
+run through `voicefx.py`, which turns it into a small cute robot. Presets
+(`VOICE_FX`):
+- `cute_robot` (default): pitch ×1.45, ring modulation, metallic comb, light bit-crush
+- `robot`: same pitch, heavier buzz
+- `chipmunk`: pitch ×1.7, clean
+- `none`
+
+`VOICE_PITCH` overrides the pitch. Try combinations with
+`say.py --fx robot --pitch 1.3 "Beep boop"`, then set them in
+`/etc/nanopet.conf`. `TTS=0` gives subtitles only.
 
 ### Brain + voice demo (needs your Mistral key)
 
@@ -47,8 +56,23 @@ ssh -t root@192.168.29.120 python3 /opt/nanopet/demo_brain.py --text   # type in
 
 The key comes from `/etc/nanopet.conf`, falling back to ptt-assistant's
 `/etc/assistant.conf`. Every turn prints the raw model output, whether JSON
-mode was accepted, the parsed reply, and the latency. Facts the pet chooses to
-remember go to `/var/lib/nanopet/memory.json`.
+mode was accepted, what Pip heard, any memory activity, and the latency.
+
+### Memory
+
+- **Long-term:** notes files, one per topic, in `/var/lib/nanopet/notes/`
+  (e.g. `user.md`: `- [2026-10-03] name is Aditya`). The model saves facts with
+  `memory_write: [{"topic", "note"}]`. When it needs a note that isn't in the
+  conversation, it sends `memory_read: ["topic", ...]`: the pet reads those
+  files, sends them back, and takes the second reply as the answer (one extra
+  round trip, only when needed). The system prompt lists the topics and their
+  note counts. Each topic is capped at 3 KB (the oldest notes drop out), 16 topics.
+- **Short-term:** the conversation as `(user said, Pip said)` pairs only. The
+  model transcribes what it heard into `heard`, so emotions and actions are not
+  kept. Last `HISTORY_TURNS` (8) exchanges, trimmed to a size budget, forgotten
+  after `HISTORY_IDLE_MIN` (15) minutes of silence.
+
+To make it forget everything: `rm -r /var/lib/nanopet/notes`.
 
 The model must reply with one JSON object (emotion, intensity, say, screen,
 action, look, remember; see PLAN.md). `brain.py` parses it tolerantly:
@@ -71,7 +95,9 @@ JSON-mode fallback.
 | `demo_face.py` | keyboard demo and benchmark |
 | `brain.py` | persona prompt, JSON reply contract, tolerant parser, subtitle chunking |
 | `mistral.py` | chat with audio or text, JSON mode with automatic fallback, model fallback |
-| `memory.py` | remembered facts, the pet's name and mood (JSON file) |
+| `memory.py` | long-term notes per topic, short-term (heard, said) history, name and mood |
+| `conversation.py` | one turn: history + audio → reply, memory writes, memory-read round trip |
+| `voicefx.py` | cute-robot voice: pitch shift, ring mod, comb, bit-crush (numpy) |
 | `common.py` | config, clock bootstrap, microphone recorder |
 | `demo_brain.py` | talk → reaction + spoken answer, with lip-sync and timed subtitles |
 | `speech.py` | decodes TTS audio (WAV / float PCM), loudness envelope, USB playback |

@@ -51,12 +51,11 @@ class Mistral:
             raise MistralError("no Voxtral chat model available")
         return cands[0]
 
-    def chat(self, system_prompt, user_parts, max_tokens=400, temperature=0.7):
-        """user_parts: list of content parts. Returns (text, seconds)."""
+    def chat(self, messages, max_tokens=400, temperature=0.7):
+        """messages: full chat message list. Returns (text, seconds)."""
         payload = {
             "model": self.model,
-            "messages": [{"role": "system", "content": system_prompt},
-                         {"role": "user", "content": user_parts}],
+            "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
         }
@@ -127,10 +126,18 @@ class Mistral:
             return r.content, time.monotonic() - t0
         raise last or MistralError("TTS failed")
 
-    def chat_audio(self, system_prompt, wav_bytes, instruction, **kw):
+    @staticmethod
+    def audio_parts(wav_bytes, instruction):
         b64 = base64.b64encode(wav_bytes).decode("ascii")
-        return self.chat(system_prompt, [{"type": "input_audio", "input_audio": b64},
-                                         {"type": "text", "text": instruction}], **kw)
+        return [{"type": "input_audio", "input_audio": b64},
+                {"type": "text", "text": instruction}]
 
-    def chat_text(self, system_prompt, text, **kw):
-        return self.chat(system_prompt, [{"type": "text", "text": text}], **kw)
+    def chat_audio(self, system_prompt, wav_bytes, instruction, history=(), **kw):
+        msgs = [{"role": "system", "content": system_prompt}, *history,
+                {"role": "user", "content": self.audio_parts(wav_bytes, instruction)}]
+        return self.chat(msgs, **kw)
+
+    def chat_text(self, system_prompt, text, history=(), **kw):
+        msgs = [{"role": "system", "content": system_prompt}, *history,
+                {"role": "user", "content": text}]
+        return self.chat(msgs, **kw)

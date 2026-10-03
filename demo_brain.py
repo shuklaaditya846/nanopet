@@ -18,16 +18,16 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from brain import parse_reply, system_prompt   # noqa: E402
+import voicefx                                 # noqa: E402
+from conversation import Conversation          # noqa: E402
 from common import Recorder, ensure_clock, load_config   # noqa: E402
 from face import Face, H, W                    # noqa: E402
 from font import Font                          # noqa: E402
 from gfx import Canvas                         # noqa: E402
-from memory import Memory                      # noqa: E402
+from memory import LongTermMemory, PetState, ShortTermMemory   # noqa: E402
 from mistral import Mistral, MistralError      # noqa: E402
 from speech import Player, decode              # noqa: E402
 
-INSTRUCTION = "The audio is the user speaking to you. Reply as specified."
 
 
 class FaceLoop(threading.Thread):
@@ -101,20 +101,31 @@ def main():
         sys.exit("Set MISTRAL_API_KEY in /etc/nanopet.conf (or /etc/assistant.conf)")
     if not ensure_clock():
         print("Warning: clock not set, HTTPS may fail")
-    mem = Memory(cfg["MEMORY"])
+    data_dir = cfg["DATA_DIR"]
     client = Mistral(cfg["MISTRAL_API_KEY"], cfg["MISTRAL_MODEL"])
+    conv = Conversation(client, LongTermMemory(os.path.join(data_dir, "notes")),
+                        ShortTermMemory(max_turns=int(cfg["HISTORY_TURNS"]),
+                                        idle_reset_s=float(cfg["HISTORY_IDLE_MIN"]) * 60),
+                        PetState(os.path.join(data_dir, "state.json")))
     rec = Recorder(cfg["AUDIO_DEVICE"], int(cfg["SAMPLE_RATE"]), int(cfg["MAX_SECONDS"]))
 
     player = Player(cfg["SPEAKER"] or None)
     tts = cfg["TTS"] != "0"
     print(f"Speaker: {player.device or 'none found (subtitles only)'}; "
-          f"voice: {cfg['VOICE'] if tts else 'off'}")
+          f"voice: {cfg['VOICE'] + ' + ' + cfg['VOICE_FX'] if tts else 'off'}")
+    print(f"Memory topics: {conv.ltm.topics() or 'none yet'}")
 
     face = Face(Font())
     face.set_emotion("happy", 0.6)
     loop = FaceLoop(face, player)
     loop.start()
-    loop.say([f"Hi! I'm {mem.name}"])
+    loop.say([f"Hi! I'm {conv.state.name}"])
+
+    def status(what):
+        if what == "remembering":
+            face.set_emotion("curious", 0.8)
+            face.look("up")
+            face.subtitle = "remembering..."
 
     try:
         while True:
@@ -133,21 +144,24 @@ def main():
                 print(f"  {secs:.1f} s recorded")
             face.subtitle = "hmm..."
             face.set_emotion("curious", 0.5)
-            prompt = system_prompt(mem.name, mem.facts, mem.mood)
             try:
                 if args.text:
-                    raw, took = client.chat_text(prompt, msg)
+                    r, info = conv.ask(text=msg, on_status=status)
                 else:
-                    raw, took = client.chat_audio(prompt, wav, INSTRUCTION)
+                    r, info = conv.ask(wav=wav, on_status=status)
             except MistralError as e:
                 print("  error:", e)
                 face.set_emotion("sad", 0.6)
                 loop.say(["Oops, I", "couldn't think"])
                 continue
-            r = parse_reply(raw)
+            times = " + ".join(f"{t:.1f}" for t in info["times"])
             print(f"  model {client.model}, JSON mode {'on' if client.json_mode else 'off'}, "
-                  f"{took:.1f} s, valid JSON: {r.ok}")
-            print(f"  raw: {raw.strip()[:400]}")
+                  f"{times} s, valid JSON: {r.ok}, history {len(conv.stm.turns)} turns")
+            for raw in info["raw"]:
+                print(f"  raw: {' '.join(raw.split())[:400]}")
+            for line in info["log"]:
+                print(f"  memory: {line}")
+            print(f"  heard: {info['heard']}")
             print(f"  -> {r.emotion} ({r.intensity:.1f}), action {r.action}, look {r.look}")
             print(f"     say: {r.say}")
             print(f"     screen: {r.screen}")
@@ -159,8 +173,10 @@ def main():
                 try:
                     audio, tts_s = client.speech(r.say, cfg["VOICE"], cfg["TTS_MODEL"])
                     x, rate = decode(audio)
-                    print(f"     voice: {tts_s:.1f} s for {len(x) / rate:.1f} s of audio "
-                          f"({rate} Hz, field '{client.tts_voice_key}')")
+                    t_fx = time.monotonic()
+                    x = voicefx.apply(x, rate, cfg["VOICE_FX"], cfg["VOICE_PITCH"] or None)
+                    print(f"     voice: {tts_s:.1f} s TTS + {time.monotonic() - t_fx:.2f} s fx, "
+                          f"{len(x) / rate:.1f} s of audio ({rate} Hz, field '{client.tts_voice_key}')")
                     player.play(x, rate)
                     loop.say(r.screen, duration=len(x) / rate)
                     spoken = True
@@ -168,8 +184,6 @@ def main():
                     print("     voice failed:", e)
             if not spoken:
                 loop.say(r.screen)
-            if r.remember and mem.remember(r.remember):
-                print(f"     remembered: {r.remember}")
     except (KeyboardInterrupt, EOFError):
         print()
     finally:

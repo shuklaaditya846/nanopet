@@ -3,6 +3,7 @@
 
     python3 say.py "Hello, I'm Pip!"
     python3 say.py --voice gb_jane_neutral "Testing another voice"
+    python3 say.py --fx robot --pitch 1.3 "Beep boop"
     python3 say.py --voices        # try to list the available voices
 """
 import argparse
@@ -14,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import ensure_clock, load_config   # noqa: E402
 from mistral import API_BASE, Mistral, MistralError   # noqa: E402
 from speech import Player, decode               # noqa: E402
+import voicefx                                  # noqa: E402
 
 
 def main():
@@ -21,6 +23,8 @@ def main():
     ap.add_argument("text", nargs="?", default="Hi! I'm Pip, your little desk pet.")
     ap.add_argument("--voice")
     ap.add_argument("--voices", action="store_true")
+    ap.add_argument("--fx", help="cute_robot | robot | chipmunk | none")
+    ap.add_argument("--pitch", type=float, help="pitch factor, e.g. 1.5")
     args = ap.parse_args()
     cfg = load_config()
     ensure_clock()
@@ -40,8 +44,10 @@ def main():
     except MistralError as e:
         sys.exit(f"TTS failed: {e}")
     x, rate = decode(audio)
+    fx = args.fx or cfg["VOICE_FX"]
+    x = voicefx.apply(x, rate, fx, args.pitch or cfg["VOICE_PITCH"] or None)
     print(f"{took:.2f} s to synthesise {len(x) / rate:.1f} s of audio "
-          f"({rate} Hz, {len(audio)} bytes, voice '{voice}' via '{c.tts_voice_key}')")
+          f"({rate} Hz, {len(audio)} bytes, voice '{voice}' via '{c.tts_voice_key}', fx {fx})")
     p = Player(cfg["SPEAKER"] or None)
     print("speaker:", p.device or "none found")
     p.play(x, rate)

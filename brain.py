@@ -29,16 +29,34 @@ SYNONYMS = {
 CONTRACT = """\
 Always reply with ONE JSON object and nothing else:
 {
+  "heard": a short transcript of what the user just said,
   "emotion": one of %(emotions)s,
   "intensity": number 0.0-1.0,
   "say": what you say out loud: short, warm, spoken style, at most %(words)d words,
   "screen": the same message as 1-%(chunks)d short subtitle chunks, each at most %(chars)d characters,
   "action": one of %(actions)s,
   "look": one of %(looks)s,
-  "remember": a short fact worth remembering about the user, or ""
+  "memory_write": [{"topic": "...", "note": "..."}] lasting facts to save, or [],
+  "memory_read": ["topic", ...] memory topics you need to read before answering, or []
 }
 Pick the emotion that fits how YOU feel about what the user said. No emojis.
+
+MEMORY. You have a long-term memory of notes, grouped by topic (for example
+user, preferences, people, events). Save short lasting facts with
+memory_write: names, likes and dislikes, birthdays, promises, important
+events. Not small talk. If the answer depends on something that might be in
+memory and isn't in the conversation, set memory_read to the topics to open
+and leave "say" empty: you'll get their contents and then give your real
+answer.
 """
+
+FOLLOWUP = """\
+Here are the memory notes you asked for:
+
+%(notes)s
+
+Now give your final reply to the user as the same kind of JSON object. Do
+not request memory again (memory_read must be [])."""
 
 PERSONA = """\
 You are %(name)s, a small, curious, affectionate desk pet who lives in a tiny
@@ -57,15 +75,21 @@ class Reply:
     screen: list = field(default_factory=list)
     action: str = "none"
     look: str = "center"
-    remember: str = ""
+    heard: str = ""
+    memory_read: list = field(default_factory=list)
+    memory_write: list = field(default_factory=list)   # [(topic, note)]
     raw: str = ""
     ok: bool = True               # False if the model's output wasn't valid JSON
 
 
-def system_prompt(name="Pip", memory=(), mood=None, words=30, chunks=6, chars=18):
+def system_prompt(name="Pip", topics=None, mood=None, words=30, chunks=6, chars=18):
+    """topics: {topic: note count} of the long-term memory."""
     p = PERSONA % {"name": name}
-    if memory:
-        p += "\nThings you remember about the user:\n" + "".join(f"- {m}\n" for m in memory)
+    if topics:
+        listing = ", ".join(f"{t} ({n} notes)" for t, n in topics.items())
+        p += f"\nYour memory topics: {listing}.\n"
+    else:
+        p += "\nYour memory is empty so far.\n"
     if mood is not None:
         p += f"\nYour current mood (0 sad .. 1 very happy): {mood:.1f}\n"
     p += "\n" + CONTRACT % {
@@ -174,6 +198,30 @@ def parse_reply(text, max_chars=18, max_say=400):
     if not r.say and chunks:
         r.say = " ".join(chunks)
 
-    remember = obj.get("remember", "")
-    r.remember = " ".join(str(remember).split())[:200] if remember else ""
+    r.heard = " ".join(str(obj.get("heard") or "").split())[:300]
+
+    reads = obj.get("memory_read") or []
+    if isinstance(reads, str):
+        reads = [reads]
+    if isinstance(reads, list):
+        r.memory_read = [str(t) for t in reads if str(t).strip()][:6]
+
+    writes = obj.get("memory_write") or []
+    if isinstance(writes, dict):
+        writes = [writes]
+    if isinstance(writes, str):
+        writes = [{"topic": "user", "note": writes}]
+    if isinstance(writes, list):
+        for w in writes[:6]:
+            if isinstance(w, dict) and str(w.get("note") or "").strip():
+                r.memory_write.append((str(w.get("topic") or "misc"), str(w["note"])))
+            elif isinstance(w, str) and w.strip():
+                r.memory_write.append(("misc", w))
+    legacy = obj.get("remember")                 # older contract
+    if isinstance(legacy, str) and legacy.strip():
+        r.memory_write.append(("user", legacy))
     return r
+
+
+def followup_text(notes):
+    return FOLLOWUP % {"notes": notes}

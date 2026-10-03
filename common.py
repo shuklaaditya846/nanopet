@@ -25,10 +25,14 @@ DEFAULTS = {
     "ENCODER_DT": "PA1",
     "ENCODER_REVERSE": "0",
     "ENCODER_STEPS": "4",
-    "MEMORY": "/var/lib/nanopet/memory.json",
+    "DATA_DIR": "/var/lib/nanopet", # notes/ (long-term memory), state.json
+    "HISTORY_TURNS": "8",           # short-term memory: last N exchanges
+    "HISTORY_IDLE_MIN": "15",       # ...forgotten after this much silence
     "TTS": "1",                     # 0 = subtitles only
     "TTS_MODEL": "voxtral-mini-tts-2603",
-    "VOICE": "en_paul_neutral",     # a Voxtral preset voice id
+    "VOICE": "gb_jane_neutral",     # Voxtral preset voice (the base for the effects)
+    "VOICE_FX": "cute_robot",       # cute_robot | robot | chipmunk | none
+    "VOICE_PITCH": "",              # override the preset's pitch factor, e.g. 1.6
     "SPEAKER": "",                  # ALSA device; empty = first USB sound card
 }
 
